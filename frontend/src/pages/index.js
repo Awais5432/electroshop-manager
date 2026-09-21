@@ -27,6 +27,8 @@ export default function Home() {
       setTodayStats(data);
     } catch (err) {
       console.error('Failed to fetch stats:', err);
+      // Fallback to zero if API fails
+      setTodayStats({ sales: 0, khataGiven: 0, cashInHand: 0, lowStockCount: 0 });
     } finally {
       setLoading(false);
     }

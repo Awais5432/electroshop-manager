@@ -11,16 +11,17 @@ initDatabase();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1400,
+    height: 900,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      preload: path.join(__dirname, 'preload.js')
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+      devTools: true
     },
     icon: path.join(__dirname, 'assets/icon.png'),
     autoHideMenuBar: true,
-    title: 'ElectroShop Manager'
+    title: 'GM Electric Store'
   });
 
   // In development, load from Next.js dev server
