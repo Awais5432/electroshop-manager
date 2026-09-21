@@ -1,646 +1,445 @@
+import Head from 'next/head';
 import { useState, useEffect } from 'react';
+import { 
+  ShoppingCart, Search, Plus, Minus, Trash2, ArrowLeft, Printer,
+  User, Phone, MapPin, CreditCard, DollarSign, CheckCircle, AlertCircle,
+  Package, Tag, Hash, Save, X
+} from 'lucide-react';
 
-export default function NewSale() {
-  const [searchQuery, setSearchQuery] = useState('');
+export default function Sale() {
   const [products, setProducts] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', address: '' });
-  const [paymentInfo, setPaymentInfo] = useState({ amountPaid: '', paymentType: 'cash' });
-  const [message, setMessage] = useState('');
+  const [amountPaid, setAmountPaid] = useState('');
+  const [paymentType, setPaymentType] = useState('cash'); // cash, partial, credit
+  const [processing, setProcessing] = useState(false);
+  const [message, setMessage] = useState(null);
 
-  // Fetch products on search
   useEffect(() => {
-    if (searchQuery.length > 1) {
-      fetch(`/api/products/search?q=${encodeURIComponent(searchQuery)}`)
-        .then(res => res.json())
-        .then(data => setProducts(data))
-        .catch(err => console.error(err));
-    } else {
-      setProducts([]);
-    }
-  }, [searchQuery]);
-
-  // Fetch customers
-  useEffect(() => {
-    fetch('/api/customers')
-      .then(res => res.json())
-      .then(data => setCustomers(data))
-      .catch(err => console.error(err));
+    fetchProducts();
+    fetchCustomers();
   }, []);
 
-  // Add product to cart
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('http://localhost:3001/api/products?enabled=true');
+      const data = await res.json();
+      setProducts(data);
+    } catch (err) {
+      console.error('Failed to fetch products:', err);
+    }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const res = await fetch('http://localhost:3001/api/customers');
+      const data = await res.json();
+      setCustomers(data);
+    } catch (err) {
+      console.error('Failed to fetch customers:', err);
+    }
+  };
+
   const addToCart = (product) => {
-    const existingItem = cart.find(item => item.product_id === product.id);
-    if (existingItem) {
+    const existing = cart.find(item => item.id === product.id);
+    if (existing) {
       setCart(cart.map(item => 
-        item.product_id === product.id 
-          ? { ...item, quantity: item.quantity + 1, subtotal: (item.quantity + 1) * item.unit_price }
+        item.id === product.id 
+          ? { ...item, quantity: item.quantity + 1 }
           : item
       ));
     } else {
-      setCart([...cart, {
-        product_id: product.id,
-        name: product.name,
-        unit_price: product.selling_price,
-        quantity: 1,
-        subtotal: product.selling_price,
-        stock: product.current_stock
-      }]);
-    }
-    setSearchQuery('');
-    setProducts([]);
-  };
-
-  // Update cart item quantity
-  const updateQuantity = (productId, newQuantity) => {
-    if (newQuantity <= 0) {
-      setCart(cart.filter(item => item.product_id !== productId));
-    } else {
-      setCart(cart.map(item =>
-        item.product_id === productId
-          ? { ...item, quantity: newQuantity, subtotal: newQuantity * item.unit_price }
-          : item
-      ));
+      setCart([...cart, { ...product, quantity: 1 }]);
     }
   };
 
-  // Calculate totals
-  const totalAmount = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  const amountDue = totalAmount - (parseFloat(paymentInfo.amountPaid) || 0);
+  const updateQuantity = (productId, delta) => {
+    setCart(cart.map(item => {
+      if (item.id === productId) {
+        const newQty = Math.max(0, item.quantity + delta);
+        return { ...item, quantity: newQty };
+      }
+      return item;
+    }).filter(item => item.quantity > 0));
+  };
 
-  // Add new customer
+  const removeFromCart = (productId) => {
+    setCart(cart.filter(item => item.id !== productId));
+  };
+
   const handleAddCustomer = async () => {
     try {
-      const response = await fetch('/api/customers', {
+      const res = await fetch('http://localhost:3001/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newCustomer)
       });
-      const result = await response.json();
-      if (result.success) {
-        setCustomers([...customers, { id: result.customerId, ...newCustomer, current_balance: 0 }]);
-        setSelectedCustomer({ id: result.customerId, ...newCustomer });
-        setShowCustomerModal(false);
+      if (res.ok) {
+        const customer = await res.json();
+        setSelectedCustomer(customer);
+        setShowCustomerForm(false);
         setNewCustomer({ name: '', phone: '', address: '' });
+        fetchCustomers();
       }
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error('Failed to add customer:', err);
     }
   };
 
-  // Complete sale
+  const calculateTotal = () => {
+    return cart.reduce((sum, item) => sum + (item.selling_price * item.quantity), 0);
+  };
+
+  const calculateDue = () => {
+    const total = calculateTotal();
+    const paid = parseFloat(amountPaid) || 0;
+    return total - paid;
+  };
+
   const handleCompleteSale = async () => {
+    const total = calculateTotal();
+    const paid = parseFloat(amountPaid) || 0;
+    const due = calculateDue();
+
     if (cart.length === 0) {
-      setMessage('❌ Please add items to cart');
+      setMessage({ type: 'error', text: 'Cart is empty!' });
       return;
     }
 
-    if (parseFloat(paymentInfo.amountPaid) < totalAmount && !selectedCustomer) {
-      setMessage('❌ Please select a customer for credit sales');
+    if (due > 0 && !selectedCustomer) {
+      setMessage({ type: 'error', text: 'Please select a customer for credit sales!' });
       return;
     }
+
+    setProcessing(true);
+    setMessage(null);
 
     try {
-      const response = await fetch('/api/sales', {
+      const saleData = {
+        customerId: selectedCustomer ? selectedCustomer.id : null,
+        items: cart.map(item => ({
+          productId: item.id,
+          quantity: item.quantity,
+          unitPrice: item.selling_price
+        })),
+        totalAmount: total,
+        amountPaid: paid,
+        amountDue: due,
+        paymentType: due > 0 ? 'credit' : 'cash'
+      };
+
+      const res = await fetch('http://localhost:3001/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_id: selectedCustomer?.id,
-          total_amount: totalAmount,
-          amount_paid: parseFloat(paymentInfo.amountPaid) || totalAmount,
-          items: cart
-        })
+        body: JSON.stringify(saleData)
       });
 
-      const result = await response.json();
-      if (result.success) {
-        setMessage('✅ Sale completed successfully!');
-        // Print receipt
-        if (window.electron) {
-          window.electron.printReceipt({
-            saleId: result.saleId,
-            items: cart,
-            total: totalAmount,
-            paid: paymentInfo.amountPaid,
-            customer: selectedCustomer
-          });
-        }
-        // Reset form
-        setTimeout(() => {
-          setCart([]);
-          setPaymentInfo({ amountPaid: '', paymentType: 'cash' });
-          setSelectedCustomer(null);
-          setMessage('');
-        }, 2000);
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'Sale completed successfully!' });
+        setCart([]);
+        setSelectedCustomer(null);
+        setAmountPaid('');
+        fetchProducts();
       } else {
-        setMessage('❌ Error: ' + result.error);
+        throw new Error('Failed to complete sale');
       }
-    } catch (error) {
-      setMessage('❌ Error: ' + error.message);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to complete sale. Please try again.' });
+    } finally {
+      setProcessing(false);
     }
   };
 
+  const filteredProducts = products.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase())
+  ).slice(0, 10);
+
+  const total = calculateTotal();
+  const paid = parseFloat(amountPaid) || 0;
+  const due = calculateDue();
+
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>🧾 New Sale / Billing</h1>
-      </header>
+    <>
+      <Head>
+        <title>New Sale - GM Electric Store</title>
+      </Head>
 
-      <div style={styles.mainContent}>
-        {/* Left Panel - Product Search & Cart */}
-        <div style={styles.leftPanel}>
-          {/* Search Box */}
-          <div style={styles.searchSection}>
-            <input
-              type="text"
-              placeholder="🔍 Search product by name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={styles.searchInput}
-              autoFocus
-            />
-            
-            {products.length > 0 && (
-              <div style={styles.searchResults}>
-                {products.map(product => (
-                  <div
-                    key={product.id}
-                    style={styles.productResult}
-                    onClick={() => addToCart(product)}
-                  >
-                    <div>
-                      <strong>{product.name}</strong>
-                      <div style={styles.productMeta}>
-                        Stock: {product.current_stock} | Rs. {product.selling_price}/{product.unit}
-                      </div>
-                    </div>
-                    <button style={styles.addBtn}>+ Add</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Cart */}
-          <div style={styles.cartSection}>
-            <h2 style={styles.cartTitle}>Cart Items ({cart.length})</h2>
-            {cart.length === 0 ? (
-              <div style={styles.emptyCart}>No items in cart</div>
-            ) : (
-              <div style={styles.cartItems}>
-                {cart.map(item => (
-                  <div key={item.product_id} style={styles.cartItem}>
-                    <div style={styles.cartItemInfo}>
-                      <div style={styles.cartItemName}>{item.name}</div>
-                      <div style={styles.cartItemPrice}>Rs. {item.unit_price} × {item.quantity}</div>
-                    </div>
-                    <div style={styles.quantityControls}>
-                      <button 
-                        style={styles.qtyBtn}
-                        onClick={() => updateQuantity(item.product_id, item.quantity - 1)}
-                      >-</button>
-                      <span style={styles.qtyValue}>{item.quantity}</span>
-                      <button 
-                        style={styles.qtyBtn}
-                        onClick={() => updateQuantity(item.product_id, item.quantity + 1)}
-                      >+</button>
-                    </div>
-                    <div style={styles.cartItemSubtotal}>Rs. {item.subtotal}</div>
-                    <button 
-                      style={styles.removeBtn}
-                      onClick={() => updateQuantity(item.product_id, 0)}
-                    >×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Panel - Customer & Payment */}
-        <div style={styles.rightPanel}>
-          {/* Customer Selection */}
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>👤 Customer (Optional)</h3>
-            {selectedCustomer ? (
-              <div style={styles.selectedCustomer}>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-md shadow-sm border-b border-slate-200 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <a href="/" className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-slate-200 transition-colors">
+                  <ArrowLeft className="w-5 h-5 text-slate-600" />
+                </a>
                 <div>
-                  <strong>{selectedCustomer.name}</strong>
-                  {selectedCustomer.phone && <div>{selectedCustomer.phone}</div>}
-                  {selectedCustomer.current_balance > 0 && (
-                    <div style={{color: '#f44336'}}>Due: Rs. {selectedCustomer.current_balance}</div>
-                  )}
+                  <h1 className="text-2xl font-bold text-slate-800">New Sale / Billing</h1>
+                  <p className="text-sm text-slate-500">Create invoice and manage payments</p>
                 </div>
-                <button 
-                  style={styles.changeBtn}
-                  onClick={() => setSelectedCustomer(null)}
-                >Change</button>
               </div>
-            ) : (
-              <div style={styles.customerActions}>
-                <select
-                  style={styles.input}
-                  onChange={(e) => {
-                    const customer = customers.find(c => c.id === parseInt(e.target.value));
-                    if (customer) setSelectedCustomer(customer);
-                  }}
-                  value=""
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-6 py-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left: Product Selection */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Search */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search products (e.g., Wire, MCB, Switch)..."
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+
+                {/* Product Results */}
+                {searchTerm && (
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {filteredProducts.map(product => (
+                      <button
+                        key={product.id}
+                        onClick={() => {
+                          addToCart(product);
+                          setSearchTerm('');
+                        }}
+                        disabled={product.current_stock <= 0}
+                        className="p-4 bg-slate-50 border border-slate-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-left"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-semibold text-slate-800">{product.name}</h3>
+                            <p className="text-sm text-slate-500">{product.category} • {product.unit}</p>
+                            <p className="text-blue-600 font-bold mt-1">Rs. {product.selling_price}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-xs font-medium ${product.current_stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              Stock: {product.current_stock}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Cart */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <h2 className="text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-blue-600" />
+                  Shopping Cart ({cart.length} items)
+                </h2>
+
+                {cart.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>Cart is empty</p>
+                    <p className="text-sm mt-1">Search and add products above</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {cart.map(item => (
+                      <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-slate-800">{item.name}</h3>
+                          <p className="text-sm text-slate-500">Rs. {item.selling_price} × {item.quantity}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => updateQuantity(item.id, -1)}
+                            className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-slate-100"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="w-8 text-center font-semibold">{item.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(item.id, 1)}
+                            className="w-8 h-8 bg-white border border-slate-200 rounded-lg flex items-center justify-center hover:bg-slate-100"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            className="w-8 h-8 bg-red-50 border border-red-200 rounded-lg flex items-center justify-center hover:bg-red-100 ml-2"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Payment & Customer */}
+            <div className="space-y-6">
+              {/* Customer Selection */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <h2 className="text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <User className="w-5 h-5 text-purple-600" />
+                  Customer (Optional)
+                </h2>
+
+                {selectedCustomer ? (
+                  <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl mb-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold text-purple-800">{selectedCustomer.name}</h3>
+                        <p className="text-sm text-purple-600">{selectedCustomer.phone}</p>
+                        {selectedCustomer.current_balance > 0 && (
+                          <p className="text-xs text-red-600 mt-1">
+                            Previous Due: Rs. {selectedCustomer.current_balance}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setSelectedCustomer(null)}
+                        className="text-purple-600 hover:text-purple-800"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowCustomerForm(!showCustomerForm)}
+                      className="w-full py-3 bg-purple-50 border-2 border-dashed border-purple-200 rounded-xl text-purple-600 font-medium hover:bg-purple-100 transition-colors mb-3"
+                    >
+                      <Plus className="w-4 h-4 inline mr-2" />
+                      Add New Customer
+                    </button>
+
+                    {customers.length > 0 && (
+                      <select
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onChange={(e) => {
+                          const customer = customers.find(c => c.id === parseInt(e.target.value));
+                          setSelectedCustomer(customer);
+                        }}
+                        value=""
+                      >
+                        <option value="">Select Existing Customer</option>
+                        {customers.map(customer => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.name} - {customer.phone}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </>
+                )}
+
+                {showCustomerForm && (
+                  <div className="mt-4 space-y-3">
+                    <input
+                      type="text"
+                      placeholder="Customer Name"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      value={newCustomer.name}
+                      onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Phone Number"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      value={newCustomer.phone}
+                      onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Address (Optional)"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      value={newCustomer.address}
+                      onChange={(e) => setNewCustomer({...newCustomer, address: e.target.value})}
+                    />
+                    <button
+                      onClick={handleAddCustomer}
+                      className="w-full py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700"
+                    >
+                      Save Customer
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Payment Summary */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sticky top-24">
+                <h2 className="text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-green-600" />
+                  Payment Details
+                </h2>
+
+                <div className="space-y-4 mb-6">
+                  <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                    <span className="text-slate-600">Subtotal</span>
+                    <span className="font-semibold">Rs. {total.toFixed(2)}</span>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Amount Paid
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-lg font-semibold"
+                      value={amountPaid}
+                      onChange={(e) => setAmountPaid(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center py-3 border-b border-slate-100">
+                    <span className="text-slate-600">Due Amount (Khata)</span>
+                    <span className={`font-bold text-lg ${due > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      Rs. {due.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {message && (
+                  <div className={`mb-4 p-4 rounded-xl ${
+                    message.type === 'success' 
+                      ? 'bg-green-50 text-green-700 border border-green-200' 
+                      : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}>
+                    {message.text}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleCompleteSale}
+                  disabled={processing || cart.length === 0}
+                  className="w-full py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-semibold hover:from-green-600 hover:to-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <option value="">Select existing customer...</option>
-                  {customers.map(customer => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name} {customer.current_balance > 0 ? `(Due: Rs. ${customer.current_balance})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button 
-                  style={styles.newCustomerBtn}
-                  onClick={() => setShowCustomerModal(true)}
-                >+ New Customer</button>
+                  <CheckCircle className="w-5 h-5" />
+                  {processing ? 'Processing...' : 'Complete Sale & Print'}
+                </button>
+
+                {due > 0 && (
+                  <p className="text-xs text-center text-slate-500 mt-2">
+                    This will be added to customer's khata balance
+                  </p>
+                )}
               </div>
-            )}
-          </div>
-
-          {/* Payment Section */}
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>💰 Payment Details</h3>
-            <div style={styles.totalDisplay}>
-              <span>Total Amount:</span>
-              <span style={styles.totalValue}>Rs. {totalAmount.toFixed(2)}</span>
             </div>
-            
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Amount Paid</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={paymentInfo.amountPaid}
-                onChange={(e) => setPaymentInfo({...paymentInfo, amountPaid: e.target.value})}
-                style={styles.input}
-                placeholder="Enter amount paid"
-              />
-            </div>
-
-            {amountDue > 0 && (
-              <div style={styles.dueAlert}>
-                ⚠️ Credit (Khata): Rs. {amountDue.toFixed(2)} will be added to customer's ledger
-              </div>
-            )}
-
-            {message && <div style={styles.message}>{message}</div>}
-
-            <button 
-              style={styles.completeBtn}
-              onClick={handleCompleteSale}
-              disabled={cart.length === 0}
-            >
-              ✅ Complete & Print
-            </button>
           </div>
-        </div>
+        </main>
       </div>
-
-      {/* New Customer Modal */}
-      {showCustomerModal && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
-            <h3 style={styles.modalTitle}>Add New Customer</h3>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Name *</label>
-              <input
-                type="text"
-                value={newCustomer.name}
-                onChange={(e) => setNewCustomer({...newCustomer, name: e.target.value})}
-                style={styles.input}
-                placeholder="Customer name"
-              />
-            </div>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Phone</label>
-              <input
-                type="text"
-                value={newCustomer.phone}
-                onChange={(e) => setNewCustomer({...newCustomer, phone: e.target.value})}
-                style={styles.input}
-                placeholder="Phone number"
-              />
-            </div>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Address</label>
-              <input
-                type="text"
-                value={newCustomer.address}
-                onChange={(e) => setNewCustomer({...newCustomer, address: e.target.value})}
-                style={styles.input}
-                placeholder="Address (optional)"
-              />
-            </div>
-            <div style={styles.modalButtons}>
-              <button style={styles.cancelBtn} onClick={() => setShowCustomerModal(false)}>Cancel</button>
-              <button style={styles.submitBtn} onClick={handleAddCustomer}>Add Customer</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
-
-const styles = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: '#f5f5f5',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-  header: {
-    backgroundColor: '#4caf50',
-    color: 'white',
-    padding: '20px',
-  },
-  title: {
-    margin: '0',
-    fontSize: '28px',
-  },
-  mainContent: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 400px',
-    gap: '20px',
-    padding: '20px',
-    maxWidth: '1400px',
-    margin: '0 auto',
-  },
-  leftPanel: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-  },
-  searchSection: {
-    position: 'relative',
-  },
-  searchInput: {
-    width: '100%',
-    padding: '16px',
-    fontSize: '18px',
-    border: '2px solid #ddd',
-    borderRadius: '12px',
-    boxSizing: 'border-box',
-  },
-  searchResults: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    zIndex: 1000,
-    maxHeight: '300px',
-    overflowY: 'auto',
-  },
-  productResult: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #eee',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    cursor: 'pointer',
-  },
-  productMeta: {
-    fontSize: '14px',
-    color: '#666',
-    marginTop: '4px',
-  },
-  addBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#4caf50',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-  },
-  cartSection: {
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-  },
-  cartTitle: {
-    margin: '0 0 16px',
-    fontSize: '20px',
-    color: '#333',
-  },
-  emptyCart: {
-    textAlign: 'center',
-    color: '#999',
-    padding: '40px',
-  },
-  cartItems: {
-    maxHeight: '400px',
-    overflowY: 'auto',
-  },
-  cartItem: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px 0',
-    borderBottom: '1px solid #eee',
-    gap: '12px',
-  },
-  cartItemInfo: {
-    flex: 1,
-  },
-  cartItemName: {
-    fontWeight: '600',
-    marginBottom: '4px',
-  },
-  cartItemPrice: {
-    fontSize: '14px',
-    color: '#666',
-  },
-  quantityControls: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  qtyBtn: {
-    width: '32px',
-    height: '32px',
-    border: '1px solid #ddd',
-    borderRadius: '6px',
-    backgroundColor: 'white',
-    cursor: 'pointer',
-    fontSize: '18px',
-  },
-  qtyValue: {
-    minWidth: '30px',
-    textAlign: 'center',
-    fontWeight: 'bold',
-  },
-  cartItemSubtotal: {
-    fontWeight: 'bold',
-    minWidth: '80px',
-    textAlign: 'right',
-  },
-  removeBtn: {
-    width: '28px',
-    height: '28px',
-    border: 'none',
-    borderRadius: '50%',
-    backgroundColor: '#f44336',
-    color: 'white',
-    cursor: 'pointer',
-    fontSize: '16px',
-  },
-  rightPanel: {
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    padding: '20px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    height: 'fit-content',
-  },
-  section: {
-    marginBottom: '24px',
-  },
-  sectionTitle: {
-    margin: '0 0 16px',
-    fontSize: '18px',
-    color: '#333',
-  },
-  selectedCustomer: {
-    padding: '16px',
-    backgroundColor: '#e3f2fd',
-    borderRadius: '8px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  changeBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#2196f3',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-  },
-  customerActions: {
-    display: 'flex',
-    gap: '12px',
-  },
-  input: {
-    width: '100%',
-    padding: '12px',
-    fontSize: '16px',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-    boxSizing: 'border-box',
-  },
-  newCustomerBtn: {
-    padding: '12px 20px',
-    backgroundColor: '#9c27b0',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-  },
-  totalDisplay: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px',
-    backgroundColor: '#f0f7ff',
-    borderRadius: '8px',
-    marginBottom: '16px',
-  },
-  totalValue: {
-    fontSize: '28px',
-    fontWeight: 'bold',
-    color: '#1976d2',
-  },
-  formGroup: {
-    marginBottom: '16px',
-  },
-  label: {
-    display: 'block',
-    marginBottom: '8px',
-    fontWeight: '600',
-    color: '#333',
-  },
-  dueAlert: {
-    padding: '12px',
-    backgroundColor: '#fff3e0',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    color: '#e65100',
-  },
-  message: {
-    padding: '16px',
-    backgroundColor: '#e8f5e9',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  completeBtn: {
-    width: '100%',
-    padding: '18px',
-    backgroundColor: '#4caf50',
-    color: 'white',
-    border: 'none',
-    borderRadius: '12px',
-    fontSize: '20px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 2000,
-  },
-  modal: {
-    backgroundColor: 'white',
-    borderRadius: '12px',
-    padding: '24px',
-    width: '400px',
-    maxWidth: '90%',
-  },
-  modalTitle: {
-    margin: '0 0 20px',
-    fontSize: '22px',
-  },
-  modalButtons: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '20px',
-  },
-  cancelBtn: {
-    flex: 1,
-    padding: '12px',
-    backgroundColor: '#9e9e9e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-  submitBtn: {
-    flex: 1,
-    padding: '12px',
-    backgroundColor: '#4caf50',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-  },
-};

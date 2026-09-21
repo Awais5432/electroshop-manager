@@ -1,405 +1,351 @@
+import Head from 'next/head';
 import { useState, useEffect } from 'react';
+import { 
+  Package, Plus, Search, Save, ArrowLeft, AlertCircle, CheckCircle,
+  TrendingUp, DollarSign, Calendar, User, Tag, Hash, Box
+} from 'lucide-react';
 
-export default function AddStock() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(null);
+export default function Stock() {
   const [products, setProducts] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     category: 'Wires',
     unit: 'Piece',
-    purchase_price: '',
-    selling_price: '',
+    purchasePrice: '',
+    sellingPrice: '',
     quantity: '',
-    supplier: '',
-    low_stock_alert: 5
+    supplier: ''
   });
-  const [categories] = useState(['Wires', 'Switches', 'MCBs', 'Lights', 'Fans', 'Tools', 'Other']);
-  const [units] = useState(['Piece', 'Meter', 'Box', 'Dozen', 'Kg', 'Set']);
-  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
 
-  // Search products as user types
+  const categories = ['Wires', 'Switches', 'MCBs', 'Lights', 'Fans', 'Tools', 'Other'];
+  const units = ['Piece', 'Meter', 'Box', 'Dozen', 'Kg', 'Set'];
+
   useEffect(() => {
-    if (searchQuery.length > 0) {
-      fetch(`/api/products/search?q=${encodeURIComponent(searchQuery)}`)
-        .then(res => res.json())
-        .then(data => setProducts(data))
-        .catch(err => console.error(err));
-    } else {
-      setProducts([]);
-    }
-  }, [searchQuery]);
+    fetchProducts();
+  }, []);
 
-  // Select a product from search results
-  const handleSelectProduct = (product) => {
-    setSelectedProduct(product);
-    setFormData({
-      ...formData,
-      name: product.name,
-      category: product.category,
-      unit: product.unit,
-      purchase_price: product.purchase_price,
-      selling_price: product.selling_price,
-      low_stock_alert: product.low_stock_alert
-    });
-    setSearchQuery('');
-    setProducts([]);
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('http://localhost:3001/api/products');
+      const data = await res.json();
+      setProducts(data);
+    } catch (err) {
+      console.error('Failed to fetch products:', err);
+    }
+  };
+
+  const handleSearch = (term) => {
+    setSearchTerm(term);
+    if (term.length > 2) {
+      const matched = products.filter(p => 
+        p.name.toLowerCase().includes(term.toLowerCase())
+      );
+      if (matched.length === 1) {
+        setSelectedProduct(matched[0]);
+        setFormData({
+          ...formData,
+          name: matched[0].name,
+          category: matched[0].category,
+          unit: matched[0].unit,
+          purchasePrice: matched[0].purchase_price,
+          sellingPrice: matched[0].selling_price
+        });
+        setShowForm(true);
+      }
+    } else {
+      setSelectedProduct(null);
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    setLoading(true);
+    setMessage(null);
+
     try {
-      const response = await fetch('/api/products', {
+      const endpoint = selectedProduct 
+        ? 'http://localhost:3001/api/stock/add'
+        : 'http://localhost:3001/api/products';
+      
+      const payload = selectedProduct
+        ? { 
+            productId: selectedProduct.id, 
+            quantity: parseFloat(formData.quantity),
+            purchasePrice: parseFloat(formData.purchasePrice),
+            supplier: formData.supplier
+          }
+        : {
+            name: formData.name,
+            category: formData.category,
+            unit: formData.unit,
+            purchasePrice: parseFloat(formData.purchasePrice),
+            sellingPrice: parseFloat(formData.sellingPrice),
+            quantity: parseFloat(formData.quantity),
+            supplier: formData.supplier
+          };
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        setMessage('✅ Stock added successfully!');
+
+      if (res.ok) {
+        setMessage({ type: 'success', text: 'Stock added successfully!' });
         setFormData({
-          name: '',
-          category: 'Wires',
-          unit: 'Piece',
-          purchase_price: '',
-          selling_price: '',
-          quantity: '',
-          supplier: '',
-          low_stock_alert: 5
+          name: '', category: 'Wires', unit: 'Piece',
+          purchasePrice: '', sellingPrice: '', quantity: '', supplier: ''
         });
         setSelectedProduct(null);
-        
-        setTimeout(() => setMessage(''), 3000);
+        setShowForm(false);
+        setSearchTerm('');
+        fetchProducts();
       } else {
-        setMessage('❌ Error: ' + result.error);
+        throw new Error('Failed to save');
       }
-    } catch (error) {
-      setMessage('❌ Error: ' + error.message);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to save stock. Please try again.' });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>📦 Add Stock / Purchase Entry</h1>
-      </header>
+    <>
+      <Head>
+        <title>Add Stock - GM Electric Store</title>
+      </Head>
 
-      <div style={styles.content}>
-        {/* Search Box */}
-        <div style={styles.searchSection}>
-          <label style={styles.label}>Search Product (or add new)</label>
-          <input
-            type="text"
-            placeholder="Type product name to search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={styles.input}
-          />
-          
-          {products.length > 0 && (
-            <div style={styles.searchResults}>
-              {products.map(product => (
-                <div
-                  key={product.id}
-                  style={styles.resultItem}
-                  onClick={() => handleSelectProduct(product)}
-                >
-                  <strong>{product.name}</strong>
-                  <span style={styles.resultInfo}>
-                    Stock: {product.current_stock} | Price: Rs. {product.selling_price}
-                  </span>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-slate-100">
+        {/* Header */}
+        <header className="bg-white/80 backdrop-blur-md shadow-sm border-b border-slate-200 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <a href="/" className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center hover:bg-slate-200 transition-colors">
+                  <ArrowLeft className="w-5 h-5 text-slate-600" />
+                </a>
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-800">Add Stock / Purchase</h1>
+                  <p className="text-sm text-slate-500">Update inventory with new purchases</p>
                 </div>
-              ))}
+              </div>
             </div>
-          )}
-          
-          {selectedProduct && (
-            <div style={styles.selectedProduct}>
-              ✅ Selected: <strong>{selectedProduct.name}</strong> (Current Stock: {selectedProduct.current_stock})
-              <button 
-                style={styles.clearBtn}
-                onClick={() => {
-                  setSelectedProduct(null);
-                  setFormData({
-                    name: '',
-                    category: 'Wires',
-                    unit: 'Piece',
-                    purchase_price: '',
-                    selling_price: '',
-                    quantity: '',
-                    supplier: '',
-                    low_stock_alert: 5
-                  });
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        </header>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.formRow}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Product Name *</label>
+        <main className="max-w-7xl mx-auto px-6 py-8">
+          {/* Search Section */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 type="text"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                style={styles.input}
-                placeholder="Enter product name"
+                placeholder="Search product name (e.g., 2.5mm Wire, MCB 20A)..."
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-lg"
+                value={searchTerm}
+                onChange={(e) => handleSearch(e.target.value)}
+                autoFocus
               />
             </div>
             
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Category</label>
-              <select
-                value={formData.category}
-                onChange={(e) => setFormData({...formData, category: e.target.value})}
-                style={styles.input}
-              >
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
+            {searchTerm.length > 2 && !selectedProduct && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <p className="text-blue-700">
+                  No exact match found. Fill the form below to add a new product.
+                </p>
+              </div>
+            )}
+
+            {selectedProduct && (
+              <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+                <span className="text-green-700 font-medium">
+                  Selected: {selectedProduct.name} ({selectedProduct.current_stock} in stock)
+                </span>
+              </div>
+            )}
           </div>
 
-          <div style={styles.formRow}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Unit</label>
-              <select
-                value={formData.unit}
-                onChange={(e) => setFormData({...formData, unit: e.target.value})}
-                style={styles.input}
-              >
-                {units.map(unit => (
-                  <option key={unit} value={unit}>{unit}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Quantity Purchased *</label>
-              <input
-                type="number"
-                required
-                min="1"
-                value={formData.quantity}
-                onChange={(e) => setFormData({...formData, quantity: e.target.value})}
-                style={styles.input}
-                placeholder="e.g., 50"
-              />
+          {/* Form Section */}
+          {(showForm || searchTerm.length > 2) && (
+            <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                {/* Product Name */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <Package className="w-4 h-4 inline mr-1" />
+                    Product Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    placeholder="e.g., 2.5mm Copper Wire"
+                  />
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <Tag className="w-4 h-4 inline mr-1" />
+                    Category
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.category}
+                    onChange={(e) => setFormData({...formData, category: e.target.value})}
+                  >
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Unit */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <Hash className="w-4 h-4 inline mr-1" />
+                    Unit
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.unit}
+                    onChange={(e) => setFormData({...formData, unit: e.target.value})}
+                  >
+                    {units.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Purchase Price */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <DollarSign className="w-4 h-4 inline mr-1" />
+                    Purchase Price (per unit) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.purchasePrice}
+                    onChange={(e) => setFormData({...formData, purchasePrice: e.target.value})}
+                    placeholder="0.00"
+                  />
+                </div>
+
+                {/* Selling Price */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <TrendingUp className="w-4 h-4 inline mr-1" />
+                    Selling Price (per unit) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.sellingPrice}
+                    onChange={(e) => setFormData({...formData, sellingPrice: e.target.value})}
+                    placeholder="0.00"
+                  />
+                </div>
+
+                {/* Quantity */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <Box className="w-4 h-4 inline mr-1" />
+                    Quantity Purchased *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({...formData, quantity: e.target.value})}
+                    placeholder="0"
+                  />
+                </div>
+
+                {/* Supplier */}
+                <div className="md:col-span-2 lg:col-span-3">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    <User className="w-4 h-4 inline mr-1" />
+                    Supplier (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                    value={formData.supplier}
+                    onChange={(e) => setFormData({...formData, supplier: e.target.value})}
+                    placeholder="Supplier name"
+                  />
+                </div>
+              </div>
+
+              {/* Message */}
+              {message && (
+                <div className={`mb-6 p-4 rounded-xl ${
+                  message.type === 'success' 
+                    ? 'bg-green-50 text-green-700 border border-green-200' 
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}>
+                  {message.text}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex gap-4">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-xl font-semibold hover:from-green-600 hover:to-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Save className="w-5 h-5" />
+                  {loading ? 'Saving...' : 'Save & Print Receipt'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForm(false);
+                    setSearchTerm('');
+                    setSelectedProduct(null);
+                    setFormData({
+                      name: '', category: 'Wires', unit: 'Piece',
+                      purchasePrice: '', sellingPrice: '', quantity: '', supplier: ''
+                    });
+                  }}
+                  className="px-6 py-4 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Recent Stock Entries */}
+          <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+            <h2 className="text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-green-600" />
+              Today's Stock Entries
+            </h2>
+            <div className="text-center py-12 text-slate-400">
+              <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No stock entries today</p>
             </div>
           </div>
-
-          <div style={styles.formRow}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Purchase Price (per unit) *</label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={formData.purchase_price}
-                onChange={(e) => setFormData({...formData, purchase_price: e.target.value})}
-                style={styles.input}
-                placeholder="Rs."
-              />
-            </div>
-            
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Selling Price (per unit) *</label>
-              <input
-                type="number"
-                required
-                min="0"
-                step="0.01"
-                value={formData.selling_price}
-                onChange={(e) => setFormData({...formData, selling_price: e.target.value})}
-                style={styles.input}
-                placeholder="Rs."
-              />
-            </div>
-          </div>
-
-          <div style={styles.formRow}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Supplier (optional)</label>
-              <input
-                type="text"
-                value={formData.supplier}
-                onChange={(e) => setFormData({...formData, supplier: e.target.value})}
-                style={styles.input}
-                placeholder="Supplier name"
-              />
-            </div>
-            
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Alert when stock below</label>
-              <input
-                type="number"
-                min="1"
-                value={formData.low_stock_alert}
-                onChange={(e) => setFormData({...formData, low_stock_alert: e.target.value})}
-                style={styles.input}
-              />
-            </div>
-          </div>
-
-          {message && <div style={styles.message}>{message}</div>}
-
-          <div style={styles.buttonGroup}>
-            <button type="submit" style={styles.submitBtn}>
-              💾 Save & Print
-            </button>
-            <button 
-              type="button" 
-              style={styles.cancelBtn}
-              onClick={() => window.history.back()}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+        </main>
       </div>
-    </div>
+    </>
   );
 }
-
-const styles = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: '#f5f5f5',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  },
-  header: {
-    backgroundColor: '#ff9800',
-    color: 'white',
-    padding: '20px',
-  },
-  title: {
-    margin: '0',
-    fontSize: '28px',
-  },
-  content: {
-    maxWidth: '900px',
-    margin: '0 auto',
-    padding: '20px',
-  },
-  searchSection: {
-    marginBottom: '24px',
-    position: 'relative',
-  },
-  label: {
-    display: 'block',
-    marginBottom: '8px',
-    fontWeight: '600',
-    color: '#333',
-  },
-  input: {
-    width: '100%',
-    padding: '12px',
-    fontSize: '16px',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-    boxSizing: 'border-box',
-  },
-  searchResults: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-    zIndex: 1000,
-    maxHeight: '300px',
-    overflowY: 'auto',
-  },
-  resultItem: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #eee',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-  },
-  resultInfo: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#666',
-    marginTop: '4px',
-  },
-  selectedProduct: {
-    marginTop: '12px',
-    padding: '12px',
-    backgroundColor: '#e8f5e9',
-    borderRadius: '8px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  clearBtn: {
-    marginLeft: 'auto',
-    padding: '6px 12px',
-    backgroundColor: '#f44336',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-  },
-  form: {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-  },
-  formRow: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '20px',
-    marginBottom: '20px',
-  },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  message: {
-    padding: '16px',
-    backgroundColor: '#e8f5e9',
-    borderRadius: '8px',
-    marginBottom: '20px',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  buttonGroup: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '24px',
-  },
-  submitBtn: {
-    flex: 1,
-    padding: '16px',
-    backgroundColor: '#4caf50',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '18px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-  },
-  cancelBtn: {
-    padding: '16px 32px',
-    backgroundColor: '#9e9e9e',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '16px',
-    cursor: 'pointer',
-  },
-};

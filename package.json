@@ -1,63 +1,52 @@
 {
-  "name": "electroshop-manager",
+  "name": "gm-electric-store",
   "version": "1.0.0",
-  "description": "Desktop POS, Inventory & Khata System for Electric Shops",
+  "description": "Desktop POS, Inventory & Khata System for GM Electric Store",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev frontend",
-    "build": "next build frontend && electron-builder",
-    "start": "next start frontend",
-    "electron": "electron .",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "export": "next build frontend && next export frontend -o dist",
-    "package": "npm run export && electron-builder"
+    "electron:build": "npm run build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "keywords": [
-    "pos",
-    "inventory",
-    "khata",
-    "electronic-shop",
-    "desktop-app"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^9.4.3",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "next": "^14.1.0",
+    "lucide-react": "^0.344.0",
+    "next": "14.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "node-thermal-printer": "^4.4.2",
-    "uuid": "^9.0.0"
+    "recharts": "^2.12.2",
+    "tailwind-merge": "^2.2.1",
+    "clsx": "^2.1.0"
   },
   "devDependencies": {
-    "electron": "^28.2.0",
-    "electron-builder": "^24.9.1",
+    "autoprefixer": "^10.4.18",
     "concurrently": "^8.2.2",
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.electroshop.manager",
-    "productName": "ElectroShop Manager",
-    "directories": {
-      "output": "release",
-      "app": "."
-    },
-    "files": [
-      "electron/**/*",
-      "dist/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ],
+    "appId": "com.gmelectric.store",
+    "productName": "GM Electric Store Manager",
     "win": {
       "target": "nsis",
-      "icon": "electron/assets/icon.ico"
+      "icon": "public/icon.ico"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+    "files": [
+      "out/**/*",
+      "electron/**/*",
+      "database/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
     }
   }
 }
