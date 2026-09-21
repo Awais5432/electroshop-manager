@@ -1,8 +1,7 @@
-module.exports = {
-  output: 'export',
-  distDir: '../dist',
-  images: {
-    unoptimized: true
-  },
-  trailingSlash: true
-};
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  trailingSlash: true,
+}
+
+module.exports = nextConfig
